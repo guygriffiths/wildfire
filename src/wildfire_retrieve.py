@@ -25,7 +25,7 @@ top net thermal radiation
 import os.path
 from datetime import date, timedelta
 from ecmwfapi import ECMWFDataServer
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager
 
 class WildfireTiggeDataRetriever():
     # The first available date in TIGGE
@@ -62,27 +62,29 @@ class WildfireTiggeDataRetriever():
         self.path = data_path
         self.keys = keys
         self.current_key = 0
+        self.lock = Manager().Lock()
     
     def bulk_download(self, end_date = None, force=False, reduced_set=False):
         # No date specified.  Try and download up to today.
         # This will fail on many
         if end_date is None:
             end_date = date.today()
-        # ECMWF allows 3 active requests per user, so we create a pool of 6 requests per user
+        # ECMWF allows 3 active requests per user, so we create a pool of 4 requests per user
         # to ensure that the pending requests get submitted immediately.
-        size = len(self.keys) * 6
+        # Could be set to 6, but 4 seemed to be quicker (not tested extensively though)
+        size = len(self.keys) * 4
         worker_pool = Pool(size)
         current_date = WildfireTiggeDataRetriever.start_date
         args = []
         while current_date <= end_date:
-            args.append((self,current_date.year, current_date.month, current_date.day, 0, force, reduced_set))
-            args.append((self,current_date.year, current_date.month, current_date.day, 6, force, reduced_set))
-            args.append((self,current_date.year, current_date.month, current_date.day, 12, force, reduced_set))
-            args.append((self,current_date.year, current_date.month, current_date.day, 18, force, reduced_set))
+            args.append((self,current_date.year, current_date.month, current_date.day, 0, self._get_ecmwf_key(), force, reduced_set))
+            args.append((self,current_date.year, current_date.month, current_date.day, 6, self._get_ecmwf_key(), force, reduced_set))
+            args.append((self,current_date.year, current_date.month, current_date.day, 12, self._get_ecmwf_key(), force, reduced_set))
+            args.append((self,current_date.year, current_date.month, current_date.day, 18, self._get_ecmwf_key(), force, reduced_set))
             current_date += timedelta(days=1)
         worker_pool.map(__get_data_wrapper__, args)
     
-    def get_data(self, year, month, day, hour, force=False, reduced_set=False):
+    def get_data(self, year, month, day, hour, key, force=False, reduced_set=False):
         ''' Retrieves wildfire data for a given date + time.
         
         THIS METHOD RETRIEVES DATA SYNCHRONOUSLY AND WILL NOT RETURN UNTIL DATA IS DOWNLOADED.
@@ -108,11 +110,9 @@ class WildfireTiggeDataRetriever():
         '''
         # Only download if file doesn't exist and we haven't forced a redownload
         if not self.need_to_download(year, month, day, hour, reduced_set) and not force:
-            print 'Already downloaded',self._get_filename(year, month, day, hour, reduced_set)
-            print 'Set force=True to force a redownload'
+            print 'Already downloaded',self._get_filename(year, month, day, hour, reduced_set),'not redownloading'
             return
-            
-        key = self._get_ecmwf_key()
+
         server = ECMWFDataServer('https://api.ecmwf.int/v1',key[0], key[1])
         
         # Get the full set of variables?
@@ -139,7 +139,6 @@ class WildfireTiggeDataRetriever():
             "area": "14/-82/-57/-31"
         }
         server.retrieve(request_params)
-#         print 'Downloaded data:',self._get_filename(year, month, day, hour, reduced_set)
     
     def need_to_download(self, year, month, day, hour, reduced_set=False):
         ''' Will check whether or not the specified forecast needs to be downloaded.
@@ -219,10 +218,13 @@ def __get_data_wrapper__(args):
     # This just wraps the get_data function, because instance methods cannot be
     # used in a multiprocessing pool.  Wrapping them like this works fine
     # BUT NOT ON WINDOWS.
-    args[0].get_data(args[1], args[2], args[3], args[4], args[5], args[6])
+    args[0].get_data(args[1], args[2], args[3], args[4], args[5], args[6], args[7])
 
 if __name__ == '__main__':
     data_dir = '/path/to/data/dir'
-    ecmwf_keys =  [('abcdefg-thisismyecmwfkey','email@domain.com')]
+    ecwmf_keys = [('abcdefg-thisistheecmwfkey','email@domain.com')]
     data_downloader = WildfireTiggeDataRetriever(data_dir, ecmwf_keys)
-    data_downloader.bulk_download(date(2007,3,12))
+#     data_downloader.get_data(2016, 10, 24, 0)
+#     data_downloader.get_data(2016, 10, 23, 0)
+#     data_downloader.get_data(2016, 10, 22, 0)
+    data_downloader.bulk_download(date(2007,4,30))
