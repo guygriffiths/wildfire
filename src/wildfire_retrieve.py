@@ -26,6 +26,7 @@ import os.path
 from datetime import date, timedelta
 from ecmwfapi import ECMWFDataServer
 from multiprocessing import Pool, Manager
+import traceback
 
 class WildfireTiggeDataRetriever():
     # The first available date in TIGGE
@@ -82,7 +83,9 @@ class WildfireTiggeDataRetriever():
             args.append((self,current_date.year, current_date.month, current_date.day, 12, self._get_ecmwf_key(), force, reduced_set))
             args.append((self,current_date.year, current_date.month, current_date.day, 18, self._get_ecmwf_key(), force, reduced_set))
             current_date += timedelta(days=1)
-        worker_pool.map(__get_data_wrapper__, args)
+        # chunksize=1 means that we mostly keep the order of file retrieval intact
+        # without it, we get downloads in a more random order, which is less efficient on MARS
+        worker_pool.map(__get_data_wrapper__, args, chunksize=1)
     
     def get_data(self, year, month, day, hour, key, force=False, reduced_set=False):
         ''' Retrieves wildfire data for a given date + time.
@@ -218,13 +221,20 @@ def __get_data_wrapper__(args):
     # This just wraps the get_data function, because instance methods cannot be
     # used in a multiprocessing pool.  Wrapping them like this works fine
     # BUT NOT ON WINDOWS.
-    args[0].get_data(args[1], args[2], args[3], args[4], args[5], args[6], args[7])
+    try:
+        args[0].get_data(args[1], args[2], args[3], args[4], args[5], args[6], args[7])
+    except:
+        print('Problem with args: %s %s %s %s %s %s %s: %s' % (args[1],args[2],args[3],args[4],args[5],args[6],args[7],traceback.format_exc()))
 
 if __name__ == '__main__':
-    data_dir = '/path/to/data/dir'
-    ecwmf_keys = [('abcdefg-thisistheecmwfkey','email@domain.com')]
+    #data_dir = '/path/to/data/dir'
+    #ecwmf_keys = [('abcdefg-thisistheecmwfkey','email@domain.com')]
+    data_dir = '/home/guy/Data/wildfire'
+    ecmwf_keys =  [('b155e4a0fdc69e470ae5acaa088a5ab3','guy.griffiths@rdg.ac.uk'),
+                   ('88854e74195e924e307ea2835648d23f','h.f.dacre@reading.ac.uk'),
+                   ('8cb5941426d47ddefacc077dc640378b','b.crawford@reading.ac.uk')]
     data_downloader = WildfireTiggeDataRetriever(data_dir, ecmwf_keys)
 #     data_downloader.get_data(2016, 10, 24, 0)
 #     data_downloader.get_data(2016, 10, 23, 0)
 #     data_downloader.get_data(2016, 10, 22, 0)
-    data_downloader.bulk_download(date(2007,4,30))
+    data_downloader.bulk_download(date(2007,3,14))
