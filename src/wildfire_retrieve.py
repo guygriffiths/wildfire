@@ -1,25 +1,13 @@
 #!/usr/bin/env python
 '''
-Created on 10 Nov 2016
+
+This module contains a single class to download the appropriate data for the Wildfire project from ECMWF.
+
+It requires that the ecmwfapi module is installed.  Instructions for obtaining this API can be found at:
+
+https://software.ecmwf.int/wiki/display/WEBAPI/Accessing+ECMWF+data+servers+in+batch#AccessingECMWFdataserversinbatch-python
 
 @author: Guy Griffiths
-
-
-Additional possible fields:
-
-skin temperature
-soil temperature
-surface latent heat flux
-surface net thermal radiation
-surface sensible heat flux
-total column water
-mean sea level pressure
-orography
-snow fall water equivalent
-soil moisture
-surface net solar radiation
-surface pressure
-top net thermal radiation
 '''
 
 import os.path
@@ -29,6 +17,16 @@ from multiprocessing import Pool, Manager
 import traceback
 
 class WildfireTiggeDataRetriever():
+    ''' This class is a data downloader for data from the TIGGE dataset on the ECMWF MARS system.
+    
+    It requires a key/keys for the ECMWF API to be supplied.  You can obtain your ECMWF key by visiting:
+    https://api.ecmwf.int/v1/key/
+    
+    You will need to have registered with ECMWF and will be asked to log in if you are not already logged in.
+    
+    You should make a note of the values given on that page for "Your registered email" and "Your api key".
+    They will be needed when instantiating this class.
+    '''
     # The first available date in TIGGE
     start_date = date(2007,3,5)
     # These dates are not available.
@@ -65,9 +63,20 @@ class WildfireTiggeDataRetriever():
         self.current_key = 0
         self.lock = Manager().Lock()
     
-    def bulk_download(self, end_date = None, force=False, reduced_set=False):
+    def bulk_download(self, end_date = None, start_date = None, force=False, reduced_set=False):
+        ''' Download data in bulk.  This uses a multithreaded approach to make 4 simultaneous requests per API key,
+        to speed up data retrieval.
+        :param end_date: The date to download data up until.  Optional, defaults to today
+        :param start_date: The first date to download data from.  Optional, defaults to 2007-03-05 (the first date available)
+        :param force: Whether to download data which has already been downloaded.  Optional, defaults to False
+        :param reduced_set: Whether to download a reduced set of fields to save space.  Optional, defaults to False
+        :type end_date: datetime.date
+        :type start_date: datetime.date
+        :type force: boolean
+        :type reduced_set: boolean
+        '''
         # No date specified.  Try and download up to today.
-        # This will fail on many
+        # This will fail on many of the more recent dates
         if end_date is None:
             end_date = date.today()
         # ECMWF allows 3 active requests per user, so we create a pool of 4 requests per user
@@ -75,7 +84,10 @@ class WildfireTiggeDataRetriever():
         # Could be set to 6, but 4 seemed to be quicker (not tested extensively though)
         size = len(self.keys) * 4
         worker_pool = Pool(size)
-        current_date = WildfireTiggeDataRetriever.start_date
+        if start_date is None:
+            current_date = WildfireTiggeDataRetriever.start_date
+        else:
+            current_date = start_date
         args = []
         while current_date <= end_date:
             args.append((self,current_date.year, current_date.month, current_date.day, 0, self._get_ecmwf_key(), force, reduced_set))
@@ -174,7 +186,7 @@ class WildfireTiggeDataRetriever():
     
     def _get_ecmwf_key(self):
         ''' Gets the next ECMWF key ready to use.
-        Cycles through the keys to maintain a balanced load on the requests
+        Cycles through the keys to maintain a balanced load on the requests.
         
         :returns: The ECMWF key information
         :rtype: tuple containing (api_key, associated_email)
@@ -227,14 +239,22 @@ def __get_data_wrapper__(args):
         print('Problem with args: %s %s %s %s %s %s %s: %s' % (args[1],args[2],args[3],args[4],args[5],args[6],args[7],traceback.format_exc()))
 
 if __name__ == '__main__':
-    #data_dir = '/path/to/data/dir'
-    #ecwmf_keys = [('abcdefg-thisistheecmwfkey','email@domain.com')]
-    data_dir = '/home/guy/Data/wildfire'
-    ecmwf_keys =  [('b155e4a0fdc69e470ae5acaa088a5ab3','guy.griffiths@rdg.ac.uk'),
-                   ('88854e74195e924e307ea2835648d23f','h.f.dacre@reading.ac.uk'),
-                   ('8cb5941426d47ddefacc077dc640378b','b.crawford@reading.ac.uk')]
+    # Example usage
+    data_dir = '/path/to/data/dir'
+    ecmwf_keys = [('abcdefg-thisistheecmwfkey','email@domain.com')]
+    # Create a data downloader, with a target directory and the ECMWF keys
     data_downloader = WildfireTiggeDataRetriever(data_dir, ecmwf_keys)
-#     data_downloader.get_data(2016, 10, 24, 0)
-#     data_downloader.get_data(2016, 10, 23, 0)
-#     data_downloader.get_data(2016, 10, 22, 0)
-    data_downloader.bulk_download(date(2007,3,14))
+    
+    # There are now 2 options.  You can download a specific file using the get_data method.
+    # This will request the data from ECMWF.  The request will stay in a queue for an undetermined amount of time, then download
+    # This method will block until the data is downloaded.
+    # It will not download data which has already been retrieved, unless you add the force argument, e.g.:
+    # data_downloader.get_data(2016, 10, 24, 0, force=True)
+    data_downloader.get_data(2016, 10, 24, 0)
+    
+    # This is the preferred option.
+    # It will attempt to download all of the data from 2007-03-05 (the first available date)
+    # up until the specified date.  If no date is supplied, all data up to today will be downloaded
+    # 
+    # This will not download data which already exists in the data_dir, unless the force argument is specified
+    data_downloader.bulk_download(date(2016,12,31))
