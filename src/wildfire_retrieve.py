@@ -249,8 +249,8 @@ if __name__ == '__main__':
     # This will request the data from ECMWF.  The request will stay in a queue for an undetermined amount of time, then download
     # This method will block until the data is downloaded.
     # It will not download data which has already been retrieved, unless you add the force argument, e.g.:
-    # data_downloader.get_data(2016, 10, 24, 0, force=True)
-    data_downloader.get_data(2016, 10, 24, 0)
+    # data_downloader.get_data(2016, 10, 24, 0, ecmwf_keys[0], force=True)
+    data_downloader.get_data(2016, 10, 24, 0, ecmwf_keys[0])
     
     # This is the preferred option.
     # It will attempt to download all of the data from 2007-03-05 (the first available date)
